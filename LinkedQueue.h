@@ -1,7 +1,8 @@
 #pragma once
 
-#include <exception>
+#include <stdexcept>
 
+// Singly-linked FIFO queue, with a tail pointer so push stays O(1).
 template <typename T>
 class LinkedQueue {
 public:
@@ -12,62 +13,53 @@ public:
 
 	bool is_empty() const { return m_size == 0; }
 	int size() const { return m_size; }
+
 	T& front();
 	const T& front() const;
+	T& back();
+	const T& back() const;
+
 	void push(const T&);
 	void pop();
+	void clear() { deallocate(); }
 
 private:
-	template <typename T>
+	// Note: no `template <typename T>` here. Re-declaring T would shadow the
+	// class template parameter, which is ill-formed (MSVC accepted it, GCC and
+	// Clang reject it).
 	struct Node {
 		T m_info;
-		Node<T>* m_next;
+		Node* m_next;
 
-		Node(const T& info = T()) : m_info(info), m_next(nullptr) {}
-		Node(const Node<T>&) = delete;
-		Node<T>& operator=(const Node<T>&) = delete;
+		explicit Node(const T& info = T()) : m_info(info), m_next(nullptr) {}
+		Node(const Node&) = delete;
+		Node& operator=(const Node&) = delete;
 	};
+
 	void deallocate();
+	void copy_from(const LinkedQueue<T>&);
 
 private:
 	int m_size;
-	Node<T>* m_front;
-	Node<T>* m_rear;
+	Node* m_front;
+	Node* m_rear;
 };
 
 template <typename T>
 LinkedQueue<T>::LinkedQueue() : m_size(0), m_front(nullptr), m_rear(nullptr) {}
 
 template <typename T>
-LinkedQueue<T>::LinkedQueue(const LinkedQueue<T>& object) : m_size(object.m_size), m_front(nullptr), m_rear(nullptr)
+LinkedQueue<T>::LinkedQueue(const LinkedQueue<T>& object)
+	: m_size(0), m_front(nullptr), m_rear(nullptr)
 {
-	const Node<T>* pointer1 = object.m_front;
-	Node<T>* pointer2 = nullptr;
-	while (pointer1 != nullptr) {
-		Node<T>* tmp = new Node<T>(pointer1->m_info);
-		if (pointer1 == object.m_front) { m_front = tmp; }
-		if (pointer2 != nullptr) { pointer2->m_next = tmp; }
-		pointer2 = tmp;
-		pointer1 = pointer1->m_next;
-	}
-	m_rear = pointer2;
+	copy_from(object);
 }
 
 template <typename T>
 LinkedQueue<T>& LinkedQueue<T>::operator=(const LinkedQueue<T>& object) {
 	if (this != &object) {
 		deallocate();
-		m_size = object.m_size;
-		const Node<T>* pointer1 = object.m_front;
-		Node<T>* pointer2 = nullptr;
-		while (pointer1 != nullptr) {
-			Node<T>* tmp = new Node<T>(pointer1->m_info);
-			if (pointer1 == object.m_front) { m_front = tmp; }
-			if (pointer2 != nullptr) { pointer2->m_next = tmp; }
-			pointer2 = tmp;
-			pointer1 = pointer1->m_next;
-		}
-		m_rear = pointer2;
+		copy_from(object);
 	}
 	return *this;
 }
@@ -79,50 +71,79 @@ LinkedQueue<T>::~LinkedQueue() {
 
 template <typename T>
 T& LinkedQueue<T>::front() {
-	if (m_size != 0) {
-		return m_front->m_info;
+	if (is_empty()) {
+		throw std::out_of_range("LinkedQueue::front on an empty queue");
 	}
-	throw std::exception("The queue is empty.");
+	return m_front->m_info;
 }
 
 template <typename T>
 const T& LinkedQueue<T>::front() const {
-	if (m_size != 0) {
-		return m_front->m_info;
+	if (is_empty()) {
+		throw std::out_of_range("LinkedQueue::front on an empty queue");
 	}
-	throw std::exception("The queue is empty.");
+	return m_front->m_info;
+}
+
+template <typename T>
+T& LinkedQueue<T>::back() {
+	if (is_empty()) {
+		throw std::out_of_range("LinkedQueue::back on an empty queue");
+	}
+	return m_rear->m_info;
+}
+
+template <typename T>
+const T& LinkedQueue<T>::back() const {
+	if (is_empty()) {
+		throw std::out_of_range("LinkedQueue::back on an empty queue");
+	}
+	return m_rear->m_info;
 }
 
 template <typename T>
 void LinkedQueue<T>::push(const T& element) {
-	Node<T>* tmp = new Node<T>(element);
-	(m_size == 0) ? m_front = tmp : m_rear->m_next = tmp;
+	Node* tmp = new Node(element);
+	if (m_front == nullptr) {
+		m_front = tmp;
+	}
+	else {
+		m_rear->m_next = tmp;
+	}
 	m_rear = tmp;
 	++m_size;
 }
 
 template <typename T>
 void LinkedQueue<T>::pop() {
-	if (m_size != 0) {
-		Node<T>* pointer1 = m_front->m_next;
-		delete m_front;
-		m_front = pointer1;
-		--m_size;
-		return;
+	if (is_empty()) {
+		throw std::out_of_range("LinkedQueue::pop on an empty queue");
 	}
-	throw std::exception("The queue is empty.");
+	Node* next = m_front->m_next;
+	delete m_front;
+	m_front = next;
+	if (m_front == nullptr) {
+		m_rear = nullptr;      // the old rear has just been freed
+	}
+	--m_size;
+}
+
+template <typename T>
+void LinkedQueue<T>::copy_from(const LinkedQueue<T>& object) {
+	const Node* source = object.m_front;
+	while (source != nullptr) {
+		push(source->m_info);
+		source = source->m_next;
+	}
 }
 
 template <typename T>
 void LinkedQueue<T>::deallocate() {
-	if (m_size != 0) {
-		Node<T>* pointer1 = m_front;
-		Node<T>* pointer2 = m_front->m_next;
-		while (m_size != 0) {
-			delete pointer1;
-			pointer1 = pointer2;
-			pointer2 = (m_size != 1) ? pointer1->m_next : nullptr;
-			--m_size;
-		}
+	while (m_front != nullptr) {
+		Node* next = m_front->m_next;
+		delete m_front;
+		m_front = next;
 	}
+	m_rear = nullptr;
+	m_size = 0;
 }

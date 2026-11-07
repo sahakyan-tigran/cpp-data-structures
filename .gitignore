@@ -1,0 +1,32 @@
+# Build output
+*.o
+*.obj
+*.exe
+*.out
+*.a
+*.lib
+*.dll
+*.so
+*.dylib
+build/
+tests/test_all
+
+# MSVC / Visual Studio
+.vs/
+Debug/
+Release/
+x64/
+*.user
+*.vcxproj.filters
+*.sln.docstates
+
+# CLion / IntelliJ
+.idea/
+cmake-build-*/
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db

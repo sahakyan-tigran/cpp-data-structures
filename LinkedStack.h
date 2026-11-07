@@ -1,7 +1,8 @@
 #pragma once
 
-#include <exception>
+#include <stdexcept>
 
+// Singly-linked LIFO stack. Each node points at the element pushed before it.
 template <typename T>
 class LinkedStack {
 public:
@@ -12,59 +13,48 @@ public:
 
 	bool is_empty() const { return m_size == 0; }
 	int size() const { return m_size; }
+
 	T& top();
 	const T& top() const;
+
 	void push(const T&);
 	void pop();
+	void clear() { deallocate(); }
 
 private:
-	template <typename T>
+	// Note: no `template <typename T>` here. Re-declaring T would shadow the
+	// class template parameter, which is ill-formed (MSVC accepted it, GCC and
+	// Clang reject it).
 	struct Node {
 		T m_info;
-		Node<T>* m_previous;
+		Node* m_previous;
 
-		Node(const T& info = T()) : m_info(info), m_previous(nullptr) {}
-		Node(const Node<T>&) = delete;
-		Node<T>& operator=(const Node<T>&) = delete;
+		explicit Node(const T& info = T()) : m_info(info), m_previous(nullptr) {}
+		Node(const Node&) = delete;
+		Node& operator=(const Node&) = delete;
 	};
+
 	void deallocate();
+	void copy_from(const LinkedStack<T>&);
 
 private:
 	int m_size;
-	Node<T>* m_top;
+	Node* m_top;
 };
 
 template <typename T>
 LinkedStack<T>::LinkedStack() : m_size(0), m_top(nullptr) {}
 
 template <typename T>
-LinkedStack<T>::LinkedStack(const LinkedStack<T>& object) : m_size(object.m_size), m_top(nullptr)
-{
-	const Node<T>* pointer1 = object.m_top;
-	Node<T>* pointer2 = nullptr;
-	while (pointer1 != nullptr) {
-		Node<T>* tmp = new Node<T>(pointer1->m_info);
-		if (pointer1 == object.m_top) { m_top = tmp; }
-		if (pointer2 != nullptr) { pointer2->m_previous = tmp; }
-		pointer2 = tmp;
-		pointer1 = pointer1->m_previous;
-	}
+LinkedStack<T>::LinkedStack(const LinkedStack<T>& object) : m_size(0), m_top(nullptr) {
+	copy_from(object);
 }
 
 template <typename T>
 LinkedStack<T>& LinkedStack<T>::operator=(const LinkedStack<T>& object) {
 	if (this != &object) {
 		deallocate();
-		m_size = object.m_size;
-	    const Node<T>* pointer1 = object.m_top;
-		Node<T>* pointer2 = nullptr;
-		while (pointer1 != nullptr) {
-			Node<T>* tmp = new Node<T>(pointer1->m_info);
-			if (pointer1 == object.m_top) { m_top = tmp; }
-			if (pointer2 != nullptr) { pointer2->m_previous = tmp; }
-			pointer2 = tmp;
-			pointer1 = pointer1->m_previous;
-		}
+		copy_from(object);
 	}
 	return *this;
 }
@@ -76,23 +66,23 @@ LinkedStack<T>::~LinkedStack() {
 
 template <typename T>
 T& LinkedStack<T>::top() {
-	if (!is_empty()) {
-		return m_top->m_info;
+	if (is_empty()) {
+		throw std::out_of_range("LinkedStack::top on an empty stack");
 	}
-	throw std::exception("The stack is empty.");
+	return m_top->m_info;
 }
 
 template <typename T>
 const T& LinkedStack<T>::top() const {
-	if (!is_empty()) {
-		return m_top->m_info;
+	if (is_empty()) {
+		throw std::out_of_range("LinkedStack::top on an empty stack");
 	}
-	throw std::exception("The stack is empty.");
+	return m_top->m_info;
 }
 
 template <typename T>
 void LinkedStack<T>::push(const T& element) {
-	Node<T>* tmp = new Node<T>(element);
+	Node* tmp = new Node(element);
 	tmp->m_previous = m_top;
 	m_top = tmp;
 	++m_size;
@@ -100,26 +90,39 @@ void LinkedStack<T>::push(const T& element) {
 
 template <typename T>
 void LinkedStack<T>::pop() {
-	if (m_size != 0) {
-		Node<T>* p = m_top->m_previous;
-		delete m_top;
-		m_top = p;
-		--m_size;
-		return;
+	if (is_empty()) {
+		throw std::out_of_range("LinkedStack::pop on an empty stack");
 	}
-	throw std::exception("The stack is empty.");
+	Node* previous = m_top->m_previous;
+	delete m_top;
+	m_top = previous;
+	--m_size;
+}
+
+template <typename T>
+void LinkedStack<T>::copy_from(const LinkedStack<T>& object) {
+	const Node* source = object.m_top;
+	Node* tail = nullptr;
+	while (source != nullptr) {
+		Node* fresh = new Node(source->m_info);
+		if (tail == nullptr) {
+			m_top = fresh;
+		}
+		else {
+			tail->m_previous = fresh;
+		}
+		tail = fresh;
+		source = source->m_previous;
+	}
+	m_size = object.m_size;
 }
 
 template <typename T>
 void LinkedStack<T>::deallocate() {
-	if (m_size != 0) {
-		Node<T>* pointer1 = m_top;
-		Node<T>* pointer2 = m_top->m_previous;
-		while (m_size != 0) {
-			delete pointer1;
-			pointer1 = pointer2;
-			pointer2 = (m_size != 1) ? pointer1->m_previous : nullptr;
-			--m_size;
-		}
+	while (m_top != nullptr) {
+		Node* previous = m_top->m_previous;
+		delete m_top;
+		m_top = previous;
 	}
+	m_size = 0;              // leaving these stale left dangling state behind
 }

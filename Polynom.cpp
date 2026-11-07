@@ -13,7 +13,7 @@ Polynom::Polynom(const Information& object) : m_exponent(-1), m_head(nullptr) {
 	m_head->m_next = m_head;
 	Node* previous = m_head;
 	Node* tmp = nullptr;
-	for (int i = 0; i < object.size(); ++i) {
+	for (std::size_t i = 0; i < object.size(); ++i) {
 		tmp = new Node(object[i].first, object[i].second);
 		previous->m_next = tmp;
 		previous = previous->m_next;
@@ -147,13 +147,13 @@ Polynom& Polynom::derivative() {
 		current = current->m_next;
 		previous = previous->m_next;
 	}
-	--m_exponent;
+	if (m_exponent >= 0) { --m_exponent; }
 	return *this;
 }
 
 double Polynom::count_value(double value) const {
 	double result = 0;
-	Node* pointer1 = m_head->m_next;
+	const Node* pointer1 = m_head->m_next;
 	while (pointer1 != m_head) {
 		result += pointer1->m_coefficient * pow(value, pointer1->m_exponent);
 		pointer1 = pointer1->m_next;
@@ -186,18 +186,29 @@ Polynom operator*(Polynom object1, const double number) {
 
 std::ostream& operator<<(std::ostream& out, const Polynom& object)
 {
-	Polynom::Node* pointer1 = object.m_head->m_next;
-	while (pointer1 != object.m_head)
-	{
-		if (pointer1->m_coefficient != 1) {
-			out << pointer1->m_coefficient;
-		}
-		out << "x^" << pointer1->m_exponent;
-		if (pointer1->m_next->m_exponent != -1) {
-			out << " + ";
-		}
-		pointer1 = pointer1->m_next;
+	const Polynom::Node* current = object.m_head->m_next;
+	if (current == object.m_head) {
+		out << "0";
+		return out;
 	}
-	out << std::endl;
-	return out;
+	bool first = true;
+	while (current != object.m_head) {
+		double coefficient = current->m_coefficient;
+		if (!first) {
+			out << (coefficient < 0 ? " - " : " + ");
+			if (coefficient < 0) { coefficient = -coefficient; }
+		}
+		if (coefficient != 1 || current->m_exponent == 0) {
+			out << coefficient;
+		}
+		if (current->m_exponent == 1) {
+			out << "x";
+		}
+		else if (current->m_exponent != 0) {
+			out << "x^" << current->m_exponent;
+		}
+		first = false;
+		current = current->m_next;
+	}
+	return out;       // no trailing endl: let the caller decide
 }

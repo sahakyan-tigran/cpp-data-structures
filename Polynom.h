@@ -1,5 +1,6 @@
 #pragma once
 
+#include <utility>
 #include <vector>
 #include <iostream>
 
@@ -34,7 +35,7 @@ private:
 		Node(double coefficient ,int exponent)
 			: m_coefficient(coefficient), m_exponent(exponent), m_next(nullptr) {}
 		Node(const Node&) = delete;
-		Node& operator=(const Polynom&) = delete;
+		Node& operator=(const Node&) = delete;
 	};
 private:
 	int m_exponent;

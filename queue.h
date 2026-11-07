@@ -1,7 +1,13 @@
 #pragma once
 
-#include <exception>
+#include <stdexcept>
 
+// Array-backed FIFO queue implemented as a circular buffer.
+//
+// Invariant: the live elements are at
+//     m_data[(m_front + i) % m_capacity]   for i in [0, m_size)
+// Deriving the back from m_front + m_size (rather than storing it) keeps the
+// wrap-around cases from drifting out of sync.
 template <typename T>
 class Queue {
 public:
@@ -12,79 +18,68 @@ public:
 
 	bool is_empty() const { return m_size == 0; }
 	int size() const { return m_size; }
+	int capacity() const { return m_capacity; }
+
 	T& front();
 	const T& front() const;
-	void push(T);
+	T& back();
+	const T& back() const;
+
+	void push(const T&);
 	void pop();
+	void clear();
 
 private:
-	void resize();
+	void grow();
+	int index_of(int offset) const { return (m_front + offset) % m_capacity; }
 
 private:
-	static const int MAX_SIZE = 100;
+	static constexpr int INITIAL_CAPACITY = 16;
 
-	int m_max_size;
+	int m_capacity;
 	int m_size;
 	int m_front;
-	int m_rear;
 	T* m_data;
 };
 
 template <typename T>
-Queue<T>::Queue() : m_max_size(MAX_SIZE), m_size(0), m_front(-1), m_rear(-1), m_data(nullptr) {
-	m_data = new T[m_max_size]{};
-}
+Queue<T>::Queue()
+	: m_capacity(INITIAL_CAPACITY)
+	, m_size(0)
+	, m_front(0)
+	, m_data(new T[INITIAL_CAPACITY]{})
+{}
 
 template <typename T>
-Queue<T>::Queue(const Queue<T>& object) {
-	m_max_size = object.m_max_size;
-	m_size = object.m_size;
-	m_data = new T[m_max_size]{};
-	if (object.m_rear >= object.m_front) {
-		for (int i = 0; i < m_size; ++i) {
-			m_data[i] = object.m_data[i];
-		}
-		m_front = object.m_front;
-		m_rear = object.m_rear;
-	}
-	else {
-		int i = 0;
-		for (int j = m_front; j < m_max_size; ++j, ++i) {
-			m_data[i] = object.m_data[j];
-		}
-		for (int j = 0; j <= m_rear; ++j, ++i) {
-			m_data[i] = object.m_data[j];
-		}
-		m_front = 0;
-		m_rear = m_size - 1;
+Queue<T>::Queue(const Queue<T>& object)
+	: m_capacity(object.m_capacity)
+	, m_size(object.m_size)
+	, m_front(0)                       // re-linearise into the new buffer
+	, m_data(new T[object.m_capacity]{})
+{
+	for (int i = 0; i < m_size; ++i) {
+		m_data[i] = object.m_data[object.index_of(i)];
 	}
 }
 
 template <typename T>
 Queue<T>& Queue<T>::operator=(const Queue<T>& object) {
 	if (this != &object) {
+		T* fresh = new T[object.m_capacity]{};
+		try {
+			for (int i = 0; i < object.m_size; ++i) {
+				fresh[i] = object.m_data[object.index_of(i)];
+			}
+		}
+		catch (...) {
+			delete[] fresh;
+			throw;
+		}
 		delete[] m_data;
-		m_max_size = object.m_max_size;
+		m_data = fresh;
+		m_capacity = object.m_capacity;
 		m_size = object.m_size;
-		m_data = new T[m_max_size]{};
-		if (object.m_rear >= object.m_front) {
-			for (int i = 0; i < m_size; ++i) {
-				m_data[i] = object.m_data[i];
-			}
-			m_front = object.m_front;
-			m_rear = object.m_rear;
-		}
-		else {
-			int i = 0;
-			for (int j = m_front; j < m_max_size; ++j, ++i) {
-				m_data[i] = object.m_data[j];
-			}
-			for (int j = 0; j <= m_rear; ++j, ++i) {
-				m_data[i] = object.m_data[j];
-			}
-			m_front = 0;
-			m_rear = m_size - 1;
-		}
+		m_front = 0;
 	}
 	return *this;
 }
@@ -96,75 +91,79 @@ Queue<T>::~Queue() {
 
 template <typename T>
 T& Queue<T>::front() {
-	if (m_size != 0) {
-		return m_data[m_front];
+	if (is_empty()) {
+		throw std::out_of_range("Queue::front on an empty queue");
 	}
-	throw std::exception("The queue is empty.");
+	return m_data[m_front];
 }
 
 template <typename T>
 const T& Queue<T>::front() const {
-	if (m_size != 0) {
-		return m_data[m_front];
+	if (is_empty()) {
+		throw std::out_of_range("Queue::front on an empty queue");
 	}
-	throw std::exception("The queue is empty.");
+	return m_data[m_front];
 }
 
 template <typename T>
-void Queue<T>::push(T element) {
-	if (m_size == 0) {
-		m_front = 0;
-		m_rear = -1;
+T& Queue<T>::back() {
+	if (is_empty()) {
+		throw std::out_of_range("Queue::back on an empty queue");
 	}
-	if (m_size == m_max_size) {
-		resize();
+	return m_data[index_of(m_size - 1)];
+}
+
+template <typename T>
+const T& Queue<T>::back() const {
+	if (is_empty()) {
+		throw std::out_of_range("Queue::back on an empty queue");
 	}
-	if (m_rear == m_max_size - 1) {
-		m_rear = -1;
+	return m_data[index_of(m_size - 1)];
+}
+
+template <typename T>
+void Queue<T>::push(const T& element) {
+	if (m_size == m_capacity) {
+		grow();
 	}
-	m_data[++m_rear] = element;
+	m_data[index_of(m_size)] = element;
 	++m_size;
 }
 
 template <typename T>
 void Queue<T>::pop() {
-	if (m_size == 0) {
-		return;
+	if (is_empty()) {
+		throw std::out_of_range("Queue::pop on an empty queue");
 	}
-	if (m_front == m_max_size - 1) {
-		m_front = 0;
-	}
-	else {
-		++m_front;
-	}
+	m_data[m_front] = T();
+	m_front = (m_front + 1) % m_capacity;
 	--m_size;
-	if (m_rear == m_front) {
-		m_rear = 0;
-		m_data[0] = m_data[m_front];
-		m_front = 0;
-	}
 }
 
 template <typename T>
-void Queue<T>::resize() {
-	m_max_size *= 2;
-	int* tmp = new T[m_max_size]{};
-	if (m_rear > m_front) {
+void Queue<T>::clear() {
+	for (int i = 0; i < m_size; ++i) {
+		m_data[index_of(i)] = T();
+	}
+	m_size = 0;
+	m_front = 0;
+}
+
+template <typename T>
+void Queue<T>::grow() {
+	int new_capacity = m_capacity * 2;
+	T* fresh = new T[new_capacity]{};
+	try {
 		for (int i = 0; i < m_size; ++i) {
-			tmp[i] = m_data[i];
+			fresh[i] = m_data[index_of(i)];
 		}
 	}
-	else {
-		int i = 0;
-		for (int j = m_front; j < m_size; ++j, ++i) {
-			tmp[i] = m_data[j];
-		}
-		for (int j = 0; j <= m_rear; ++j, ++i) {
-			tmp[i] = m_data[j];
-		}
-		m_front = 0;
-		m_rear = m_size - 1;
+	catch (...) {
+		delete[] fresh;
+		throw;
 	}
 	delete[] m_data;
-	m_data = tmp;
+	m_data = fresh;
+	m_capacity = new_capacity;
+	m_front = 0;
 }
